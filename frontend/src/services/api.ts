@@ -21,7 +21,8 @@ export const api = {
 
     async getDocuments(): Promise<any[]> {
         const response = await fetch(`${API_BASE_URL}/documents/`);
-        return response.json();
+        const data = await response.json();
+        return data.documents || [];
     },
 
     async createApiKey(provider: string, nickname: string, credentials: any): Promise<any> {
@@ -48,5 +49,15 @@ export const api = {
             body: formData,
         });
         return response.json();
+    },
+
+    async deleteDocument(id: string): Promise<void> {
+        const response = await fetch(`${API_BASE_URL}/documents/${id}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to delete document');
+        }
     }
 };

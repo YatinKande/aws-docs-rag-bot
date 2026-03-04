@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
+from backend.core.config import settings
 from backend.services.retrieval.semantic_search import RetrievalService
 from backend.services.api_key_manager import APIKeyManager
 from backend.services.cloud_providers.factory import CloudProviderFactory
@@ -22,6 +23,9 @@ class QueryRouter:
             return await self._handle_rag(query, selected_db)
             
         if selected_source in ["aws", "gcp", "azure"]:
+            if not settings.ENABLE_CLOUD_PROVIDERS:
+                return {"source_type": "error", "message": f"{selected_source.upper()} features are disabled to prevent charges. Please enable ENABLE_CLOUD_PROVIDERS in .env if needed."}
+                
             keys = await self.key_manager.get_active_keys(self.db, "default-user", selected_source)
             if keys:
                 return await self._handle_cloud_api(query, keys[0])
@@ -29,8 +33,19 @@ class QueryRouter:
                 return {"source_type": "error", "message": f"No active {selected_source.upper()} keys found."}
 
         # 2. Intelligent Auto-Routing
+        if not settings.ENABLE_CLOUD_PROVIDERS:
+            # If cloud providers are disabled, always route to RAG
+            return await self._handle_rag(query, selected_db)
+
+        # Detect if query is specifically about uploaded documents or local knowledge
+        is_doc_specific = any(k in query_l for k in ["uploaded", "file", "document", "documents", "knowledge base", "pdf", "csv", "json", "markdown", "text file"])
+        
         is_cloud = any(k in query_l for k in ["cost", "bill", "usage", "ec2", "s3", "bucket", "buckets", "storage", "lambda", "rds", "iam", "instance", "function", "database", "gcp", "azure"])
         
+        # If user explicitly refers to documents, prioritize RAG even if cloud keywords are present
+        if is_doc_specific:
+            return await self._handle_rag(query, selected_db)
+
         if is_cloud:
             # Detect provider from query or default to first available
             target_provider = "aws"
@@ -44,7 +59,7 @@ class QueryRouter:
         return await self._handle_rag(query)
 
     async def _handle_rag(self, query: str, database: str = "faiss"):
-        results = await self.retrieval_service.semantic_search(query, database=database)
+        results = await self.retrieval_service.semantic_search(query, top_k=10, database=database)
         return {
             "source_type": "docs",
             "data": results,

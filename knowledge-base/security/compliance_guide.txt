@@ -1,0 +1,7 @@
+# AWS Security & Compliance Docs
+
+- AWS Shared Responsibility Model explanation
+- AWS Compliance certifications (SOC2, HIPAA, PCI-DSS guides)
+- AWS Security Hub findings documentation
+- GuardDuty finding types and remediation steps
+- CIS AWS Benchmark recommendations

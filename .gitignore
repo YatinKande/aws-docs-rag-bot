@@ -74,6 +74,8 @@ verify_*.txt
 *.db
 *.sqlite
 *.sqlite3
+lancedb_data/
+qdrant_db/
 
 # Vector indexes
 *.pkl

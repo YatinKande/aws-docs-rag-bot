@@ -148,125 +148,43 @@ The bot acts as a **query router** that:
 - 🎨 **Modern UI**: Clean React TypeScript interface with real-time chat
 - 📊 **Evidence Panel**: See exactly what sources were used for each answer
 
-## Quick Start for New Users
+## 🚀 Zero-Conf Setup (3 Steps Only)
 
-Follow these steps to get the bot running on your machine:
+Get the bot running and synced with the shared knowledge base in minutes.
 
-### Prerequisites
-
-Before starting, install these tools:
-
-1. **Python 3.12 or higher** - [Download here](https://www.python.org/downloads/)
-   - Verify: `python --version` or `python3 --version`
-
-2. **Node.js 18 or higher** - [Download here](https://nodejs.org/)
-   - Verify: `node --version`
-
-3. **Ollama** - [Install here](https://ollama.ai/)
-   - This runs the AI model locally on your computer
-   - After installing, pull a model: `ollama pull llama3.2`
-
-### Installation Steps
-
-**Step 1: Clone or Download the Code**
+### 1. Clone the Repo
 ```bash
-# If you have git
-git clone <repository-url>
+git clone <your-repo-url>
 cd aws-rag-bot
-
-# Or download and extract the ZIP file, then navigate to the folder
 ```
 
-**Step 2: Set Up Python Environment**
+### 2. Configure Environment
+Create a `.env` file in the root directory (get the specific values from your Team Lead):
 ```bash
-# Create a virtual environment
-python -m venv .venv
+AWS_ACCESS_KEY_ID=xxxx
+AWS_SECRET_ACCESS_KEY=xxxx
+AWS_REGION=us-east-1
+S3_KNOWLEDGE_BASE_BUCKET=your-bucket-name
+S3_INDEX_PREFIX=indexes/
+OLLAMA_TEXT_MODEL=llama3.2
+OLLAMA_VISION_MODEL=llava
+```
 
-# Activate it
-# On Mac/Linux:
-source .venv/bin/activate
-
-# On Windows:
-.venv\Scripts\activate
-
-# Install Python dependencies
+### 3. Run the App
+```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Pull local AI models
+ollama pull llama3.2
+ollama pull llava
+
+# Start the backend
+python -m backend.main
 ```
 
-**Step 3: Configure Environment Variables**
-```bash
-# Copy the example environment file
-cp .env.example .env
-
-# Generate an encryption key
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-
-# Edit .env file and paste the generated key as MASTER_ENCRYPTION_KEY
-# You can use any text editor (nano, vim, VS Code, etc.)
-```
-
-**Step 4: Install Frontend Dependencies**
-```bash
-cd frontend
-npm install
-cd ..
-```
-
-**Step 5: Start the Application**
-```bash
-# Make sure Ollama is running (it should start automatically after installation)
-# If not, run: ollama serve
-
-# Start both backend and frontend with one command
-bash scripts/start.sh
-```
-
-**Step 6: Open the Application**
-- Open your browser and go to: **http://localhost:5173**
-- The backend API runs at: **http://localhost:8000**
-
-### First Time Usage
-
-**1. Upload a Document (Optional)**
-   - Click on the "Knowledge Base" tab
-   - Click "Upload Document"
-   - Select a PDF, Word doc, or text file
-   - Wait for it to process (you'll see a success message)
-
-**2. Add AWS Credentials (Optional)**
-   - Click on "Settings" → "API Connections"
-   - Click "Add API Key"
-   - Select "AWS" as provider
-   - Enter your AWS Access Key ID and Secret Access Key
-   - Click "Save" (your keys are encrypted and stored securely)
-
-**3. Start Asking Questions!**
-   - Go to the "Chat" tab
-   - Try asking about your uploaded documents:
-     - "What is this document about?"
-     - "Summarize the main points"
-   - Or ask about your AWS infrastructure:
-     - "List my S3 buckets"
-     - "What EC2 instances are running?"
-
-### Stopping the Application
-
-Press `Ctrl+C` in the terminal where you ran `start.sh`
-
-### Running Again Later
-
-```bash
-# Navigate to the project folder
-cd aws-rag-bot
-
-# Activate the Python environment
-source .venv/bin/activate  # Mac/Linux
-# or
-.venv\Scripts\activate  # Windows
-
-# Start the application
-bash scripts/start.sh
-```
+> [!IMPORTANT]
+> **Zero Re-Uploading Needed**: On startup, the app automatically pulls the shared FAISS index from S3. All 50+ AWS documents are immediately available for querying without any manual ingestion.
 
 ## How It Works
 

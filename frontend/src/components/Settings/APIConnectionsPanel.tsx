@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Cloud, CheckCircle2, Trash2, ShieldCheck, Globe, ExternalLink, Key } from 'lucide-react';
+import { Plus, Cloud, CheckCircle2, Trash2, ShieldCheck, Globe, ExternalLink } from 'lucide-react';
 import type { APIKey } from '../../types';
 import { api } from '../../services/api';
 
@@ -53,15 +53,19 @@ export const APIConnectionsPanel: React.FC = () => {
                     <h1 className="text-2xl font-bold text-slate-900 tracking-tight">API Connections</h1>
                     <p className="text-sm text-slate-500 mt-1">Manage your cloud provider credentials securely.</p>
                 </div>
-                {!isAdding && (
+                <div className="flex flex-col items-end">
+                    <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mb-2 bg-amber-50 px-2 py-1 rounded-md border border-amber-100 flex items-center">
+                        <ShieldCheck className="w-3 h-3 mr-1" /> Zero-Cost Mode Enabled
+                    </span>
                     <button
-                        onClick={() => setIsAdding(true)}
-                        className="flex items-center px-4 py-2 bg-brand-600 text-white text-sm font-semibold rounded-xl hover:bg-brand-700 shadow-lg shadow-brand-500/20 transition-all active:scale-95"
+                        disabled
+                        className="flex items-center px-4 py-2 bg-slate-200 text-slate-400 text-sm font-semibold rounded-xl cursor-not-allowed shadow-none transition-all"
+                        title="Cloud features are disabled in .env to prevent charges."
                     >
                         <Plus className="w-4 h-4 mr-2" />
                         Add Connection
                     </button>
-                )}
+                </div>
             </div>
 
             <div className="bg-brand-50 border border-brand-100 rounded-2xl p-4 flex items-start space-x-3">
@@ -190,10 +194,12 @@ export const APIConnectionsPanel: React.FC = () => {
 
             {keys.length === 0 && !isAdding && (
                 <div className="text-center py-20 bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl space-y-4">
-                    <Key className="w-12 h-12 text-slate-300 mx-auto" />
-                    <div>
-                        <h3 className="text-sm font-bold text-slate-700">No active connections</h3>
-                        <p className="text-xs text-slate-400 mt-1">Connect your AWS, GCP, or Azure accounts to enable live data queries.</p>
+                    <ShieldCheck className="w-12 h-12 text-amber-400 mx-auto" />
+                    <div className="max-w-xs mx-auto">
+                        <h3 className="text-sm font-bold text-slate-700">Cloud Features are Paused</h3>
+                        <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                            To ensure you don't incur any unexpected AWS/Cloud charges, live queries have been disabled. The bot will strictly use your local <strong>Ollama</strong> models and <strong>Knowledge Base</strong>.
+                        </p>
                     </div>
                 </div>
             )}

@@ -11,6 +11,43 @@ Before you begin, ensure you have the following installed:
 - **Ollama**: [Install Ollama](https://ollama.ai/)
 - **Git**: [Download Git](https://git-scm.com/downloads)
 
+## Vector Database Guide
+
+The AWS RAG Bot supports 5 different vector databases. By default, all of them are configured to run in **Local/Lite mode**, meaning they store data in your project folder and do not require any external servers or Docker setup.
+
+### Supported Databases & Setup
+
+| Database | Mode | Storage Location | Setup Required |
+| :--- | :--- | :--- | :--- |
+| **FAISS** | Local Index | `data/indexes/faiss/` | None (Default) |
+| **ChromaDB** | SQLite-backed | `data/indexes/chroma/` | None |
+| **Milvus** | Milvus Lite | `./milvus_demo.db` | None |
+| **Qdrant** | Local Storage | `qdrant_db/` | None |
+| **LanceDB** | Columnar File | `lancedb_data/` | None |
+
+### How to Switch Databases
+
+You can choose which database to use in two ways:
+
+#### 1. In the Web UI (Per Upload)
+When uploading a document in the **Knowledge Base** tab:
+1. Select your file.
+2. Choose your preferred engine from the **Storage Engine** dropdown.
+3. Click "Ingest". The document will be indexed specifically into that database.
+
+#### 2. Via Environment Variables (Global Default)
+To change the default database the bot uses for searching, update your `.env` file:
+```env
+# Options: faiss, chroma, lancedb, milvus, qdrant
+VECTOR_DB_TYPE=faiss
+```
+
+### Advanced: Using External Servers
+If you want to use a full production-grade instance of these databases (e.g., a Milvus cluster or Qdrant Cloud), you will need to modify the connection strings in the following files:
+- **Chroma**: `backend/services/vector_store/chroma_store.py`
+- **Milvus**: `backend/services/vector_store/milvus_store.py`
+- **Qdrant**: `backend/services/vector_store/qdrant_store.py`
+
 ## Step 1: Clone the Repository
 
 ```bash

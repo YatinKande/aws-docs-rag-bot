@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 class VectorStoreBase(ABC):
     @abstractmethod
@@ -8,6 +8,11 @@ class VectorStoreBase(ABC):
         pass
 
     @abstractmethod
-    async def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    async def search(self, query: str, top_k: int = 5, filter: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Search the store for relevant documents."""
+        pass
+
+    @abstractmethod
+    async def delete_documents(self, filter_dict: Dict[str, Any]):
+        """Delete documents from the store matching the filter."""
         pass

@@ -1,0 +1,13 @@
+{
+    "pattern": "Serverless Web App",
+    "services": [
+        "API Gateway",
+        "Lambda",
+        "DynamoDB",
+        "S3",
+        "CloudFront"
+    ],
+    "use_case": "Low-traffic web app with auto-scaling",
+    "diagram_ref": "serverless_web_app.png",
+    "description": "A highly scalable and cost-effective architecture for low-traffic web applications. It leverages S3 and CloudFront for static content delivery, API Gateway for RESTful APIs, Lambda for compute, and DynamoDB for serverless NoSQL storage."
+}

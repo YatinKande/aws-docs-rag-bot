@@ -1,7 +1,7 @@
-from sqlalchemy import Column, String, Text, DateTime, JSON, Boolean, Numeric, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, JSON, Boolean, Numeric, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from backend.models.database import Base
 
 class APIKey(Base):
@@ -45,3 +45,25 @@ class Document(Base):
     processed = Column(Boolean, default=False)
     status = Column(String, default="pending") # pending, processing, completed, failed
     metadata_info = Column(JSON, nullable=True)
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    conversation_id = Column(String, index=True)
+    query = Column(Text)
+    response = Column(Text)
+    rating = Column(Integer)  # 1 for thumbs up, -1 for thumbs down
+    correction = Column(Text, nullable=True) # User's explicit correction
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    metadata_info = Column(JSON, nullable=True)
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, index=True)
+    category = Column(String) # e.g., "style", "technical_focus", "frequent_service"
+    preference_value = Column(Text) # e.g., "Detailed CLI examples", "EC2 Cost Optimization"
+    weight = Column(Numeric, default=1.0) # Strength of the pattern
+    last_updated = Column(DateTime, default=datetime.utcnow)

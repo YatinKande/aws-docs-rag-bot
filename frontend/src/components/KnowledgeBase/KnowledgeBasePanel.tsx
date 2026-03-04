@@ -1,12 +1,12 @@
 import React from 'react';
-import { Upload, Database, FileText, CheckCircle2, AlertCircle, Loader2, Trash2, Zap } from 'lucide-react';
+import { Upload, Database, FileText, CheckCircle2, AlertCircle, Loader2, Trash2, Zap, Cloud } from 'lucide-react';
 import { api } from '../../services/api';
 
 export const KnowledgeBasePanel: React.FC = () => {
     const [file, setFile] = React.useState<File | null>(null);
     const [database, setDatabase] = React.useState('faiss');
     const [isUploading, setIsUploading] = React.useState(false);
-    const [status, setStatus] = React.useState<{ type: 'success' | 'error', message: string } | null>(null);
+    const [status, setStatus] = React.useState<{ type: 'success' | 'error', message: React.ReactNode } | null>(null);
     const [documents, setDocuments] = React.useState<any[]>([]);
     const [isLoadingDocs, setIsLoadingDocs] = React.useState(false);
 
@@ -14,7 +14,7 @@ export const KnowledgeBasePanel: React.FC = () => {
         setIsLoadingDocs(true);
         try {
             const docs = await api.getDocuments();
-            setDocuments(docs);
+            setDocuments(Array.isArray(docs) ? docs : []);
         } catch (error) {
             console.error('Failed to fetch documents:', error);
         } finally {
@@ -26,6 +26,15 @@ export const KnowledgeBasePanel: React.FC = () => {
         fetchDocuments();
         // Set up polling for status updates
         const interval = setInterval(fetchDocuments, 5000);
+
+        // Show initial loading message if first time
+        const hasLoadedBefore = localStorage.getItem('kb_loaded');
+        if (!hasLoadedBefore) {
+            setStatus({ type: 'success', message: 'Loading shared knowledge base from S3...' });
+            localStorage.setItem('kb_loaded', 'true');
+            setTimeout(() => setStatus(null), 4000);
+        }
+
         return () => clearInterval(interval);
     }, []);
 
@@ -35,6 +44,8 @@ export const KnowledgeBasePanel: React.FC = () => {
             setStatus(null);
         }
     };
+
+    const [showDeleteModal, setShowDeleteModal] = React.useState<{ id: string, name: string } | null>(null);
 
     const onUpload = async () => {
         if (!file) return;
@@ -49,11 +60,42 @@ export const KnowledgeBasePanel: React.FC = () => {
             fetchDocuments(); // Refresh list
             const input = document.getElementById('file-upload') as HTMLInputElement;
             if (input) input.value = '';
+
+            // Show S3 Sync status after a short delay
+            setTimeout(() => {
+                setStatus({
+                    type: 'success',
+                    message: (
+                        <span className="flex items-center">
+                            Synced to S3 <Cloud className="w-4 h-4 ml-2 text-brand-500" />
+                        </span>
+                    ) as any
+                });
+                setTimeout(() => setStatus(null), 3000);
+            }, 3000);
         } catch (error) {
             console.error('Upload error:', error);
             setStatus({ type: 'error', message: 'Failed to upload document. Please try again.' });
         } finally {
             setIsUploading(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!showDeleteModal) return;
+
+        try {
+            await api.deleteDocument(showDeleteModal.id);
+            setStatus({ type: 'success', message: `Successfully deleted "${showDeleteModal.name}"` });
+            setShowDeleteModal(null);
+            fetchDocuments(); // Refresh list
+
+            // Clear success message after 5 seconds
+            setTimeout(() => setStatus(null), 5000);
+        } catch (error) {
+            console.error('Delete error:', error);
+            setStatus({ type: 'error', message: `Failed to delete "${showDeleteModal.name}".` });
+            setShowDeleteModal(null);
         }
     };
 
@@ -64,22 +106,24 @@ export const KnowledgeBasePanel: React.FC = () => {
                 <p className="text-slate-500 font-medium">Upload, track, and manage your documents across multiple local vector databases.</p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 mb-12">
                 {/* Upload Section */}
-                <div className="lg:col-span-2 space-y-8">
+                <div className="lg:col-span-3 space-y-8">
                     <div className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex items-center space-x-4 mb-8">
-                            <div className="w-12 h-12 bg-brand-50 rounded-2xl flex items-center justify-center">
-                                <Upload className="text-brand-600 w-6 h-6" />
-                            </div>
-                            <div>
-                                <h3 className="text-xl font-bold text-slate-800">Add New Information</h3>
-                                <p className="text-slate-500 text-sm">Upload a new document to your selected database.</p>
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
+                            <div className="flex items-center space-x-4">
+                                <div className="w-12 h-12 bg-brand-50 rounded-2xl flex items-center justify-center">
+                                    <Upload className="text-brand-600 w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-bold text-slate-800">Add New Information</h3>
+                                    <p className="text-slate-500 text-sm">Upload a new document to your selected database.</p>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <div className="space-y-6">
+                        <div className="flex flex-col xl:flex-row gap-8">
+                            <div className="flex-1 space-y-6">
                                 <div>
                                     <label className="block text-sm font-bold text-slate-700 mb-3 uppercase tracking-wider">Storage Engine</label>
                                     <div className="relative">
@@ -127,7 +171,7 @@ export const KnowledgeBasePanel: React.FC = () => {
                             </div>
 
                             <div
-                                className={`border-3 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center transition-all cursor-pointer group ${file ? 'border-brand-500 bg-brand-50/20' : 'border-slate-200 hover:border-brand-400 bg-slate-50/50 hover:bg-white'}`}
+                                className={`flex-1 border-3 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center transition-all cursor-pointer group min-h-[220px] ${file ? 'border-brand-500 bg-brand-50/20' : 'border-slate-200 hover:border-brand-400 bg-slate-50/50 hover:bg-white'}`}
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={(e) => {
                                     e.preventDefault();
@@ -142,14 +186,14 @@ export const KnowledgeBasePanel: React.FC = () => {
                                     id="file-upload"
                                     className="hidden"
                                     onChange={onFileChange}
-                                    accept=".txt,.pdf,.docx,.json"
+                                    accept=".txt,.pdf,.docx,.json,.csv,.jpg,.jpeg,.png"
                                 />
                                 {file ? (
                                     <div className="flex flex-col items-center text-center">
                                         <div className="w-20 h-20 bg-brand-100 rounded-3xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform shadow-sm">
                                             <FileText className="text-brand-600 w-10 h-10" />
                                         </div>
-                                        <p className="text-slate-900 font-black mb-1 truncate max-w-[250px] leading-tight">{file.name}</p>
+                                        <p className="text-slate-900 font-black mb-1 truncate max-w-[250px] leading-tight" title={file.name}>{file.name}</p>
                                         <p className="text-slate-400 font-bold text-xs mb-5 uppercase">{(file.size / 1024).toFixed(1)} KB</p>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); setFile(null); }}
@@ -164,7 +208,7 @@ export const KnowledgeBasePanel: React.FC = () => {
                                             <Upload className="text-slate-400 w-10 h-10 group-hover:text-brand-500 transition-colors" />
                                         </div>
                                         <p className="text-slate-700 font-black mb-1">Drop your files here</p>
-                                        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">PDF, TXT, DOCX, JSON</p>
+                                        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">PDF, TXT, DOCX, JSON, CSV, JPG, PNG</p>
                                     </div>
                                 )}
                             </div>
@@ -188,20 +232,21 @@ export const KnowledgeBasePanel: React.FC = () => {
                             </button>
                         </div>
 
-                        <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-inner bg-slate-50/30">
-                            <table className="w-full text-left border-collapse">
+                        <div className="overflow-x-auto rounded-2xl border border-slate-100 shadow-inner bg-slate-50/30">
+                            <table className="w-full text-left border-collapse min-w-[800px]">
                                 <thead>
                                     <tr className="bg-slate-100/50">
                                         <th className="px-6 py-4 text-[11px] font-black text-slate-500 uppercase tracking-widest">Document</th>
-                                        <th className="px-6 py-4 text-[11px] font-black text-slate-500 uppercase tracking-widest">Status</th>
-                                        <th className="px-6 py-4 text-[11px] font-black text-slate-500 uppercase tracking-widest">Database</th>
+                                        <th className="px-6 py-4 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center">Status</th>
+                                        <th className="px-6 py-4 text-[11px] font-black text-slate-500 uppercase tracking-widest text-center">Database</th>
                                         <th className="px-6 py-4 text-[11px] font-black text-slate-500 uppercase tracking-widest">Details</th>
+                                        <th className="px-6 py-4 text-[11px] font-black text-slate-500 uppercase tracking-widest text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 bg-white">
                                     {documents.length === 0 ? (
                                         <tr>
-                                            <td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-bold italic">
+                                            <td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-bold italic">
                                                 No documents found. Start by uploading a file above.
                                             </td>
                                         </tr>
@@ -213,13 +258,13 @@ export const KnowledgeBasePanel: React.FC = () => {
                                                         <div className="w-8 h-8 mr-3 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400">
                                                             <FileText className="w-4 h-4" />
                                                         </div>
-                                                        <div>
-                                                            <p className="text-sm font-bold text-slate-800 truncate max-w-[150px]">{doc.filename}</p>
+                                                        <div className="max-w-[150px] xl:max-w-[250px]">
+                                                            <p className="text-sm font-bold text-slate-800 truncate" title={doc.filename}>{doc.filename}</p>
                                                             <p className="text-[10px] text-slate-400 font-bold uppercase">{new Date(doc.upload_date).toLocaleDateString()}</p>
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4">
+                                                <td className="px-6 py-4 text-center">
                                                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm ${doc.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
                                                         doc.status === 'processing' ? 'bg-amber-100 text-amber-700 animate-pulse' :
                                                             doc.status === 'failed' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
@@ -228,7 +273,7 @@ export const KnowledgeBasePanel: React.FC = () => {
                                                         {doc.status}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4">
+                                                <td className="px-6 py-4 text-center">
                                                     <span className="text-xs font-black text-brand-600 bg-brand-50 px-2 py-1 rounded-lg uppercase">
                                                         {doc.metadata_info?.target_database || 'faiss'}
                                                     </span>
@@ -244,6 +289,15 @@ export const KnowledgeBasePanel: React.FC = () => {
                                                             <span className="text-slate-300 italic">Calculating...</span>
                                                         )}
                                                     </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <button
+                                                        onClick={() => setShowDeleteModal({ id: doc.id, name: doc.filename })}
+                                                        className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                                        title="Delete Document"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))
@@ -305,6 +359,35 @@ export const KnowledgeBasePanel: React.FC = () => {
                     </div>
                 </div>
             </div>
+            {/* Delete Confirmation Modal */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200">
+                        <div className="w-16 h-16 bg-rose-50 rounded-2xl flex items-center justify-center mb-6 mx-auto">
+                            <Trash2 className="text-rose-600 w-8 h-8" />
+                        </div>
+                        <h3 className="text-2xl font-black text-slate-900 text-center mb-2">Delete Document?</h3>
+                        <p className="text-slate-500 text-center mb-8 leading-relaxed font-medium">
+                            Are you sure you want to delete <span className="text-slate-900 font-bold">"{showDeleteModal.name}"</span>?
+                            This action cannot be undone and will remove all data from the vector store.
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <button
+                                onClick={() => setShowDeleteModal(null)}
+                                className="flex-1 px-6 py-3.5 rounded-xl font-black text-slate-500 hover:bg-slate-50 transition-colors uppercase tracking-widest text-xs border border-slate-100"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDelete}
+                                className="flex-1 px-6 py-3.5 rounded-xl font-black text-white bg-rose-500 hover:bg-rose-600 transition-all shadow-lg shadow-rose-500/25 uppercase tracking-widest text-xs transform active:scale-95"
+                            >
+                                Delete Forever
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

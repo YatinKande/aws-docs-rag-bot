@@ -1,9 +1,7 @@
 from typing import Dict, Any, List, Optional
 import asyncio
-import logging
-from datetime import datetime
-
-logger = logging.getLogger(__name__)
+from loguru import logger
+from datetime import datetime, timezone
 
 class DynamicAWSHandler:
     """

@@ -8,7 +8,8 @@ This document describes the organization of the AWS RAG Bot codebase.
 aws-rag-bot/
 ├── backend/              # Python FastAPI backend application
 ├── frontend/             # React TypeScript frontend application
-├── data/                 # All data files and indexes
+├── data/                 # All data files and indexes (gitignored)
+├── knowledge-base/       # RAG source documents and patterns
 ├── logs/                 # Application logs
 ├── scripts/              # Utility scripts
 ├── tests/                # Test files
@@ -107,6 +108,23 @@ data/
 ```
 
 > **Note**: The `data/` directory is gitignored and created automatically on first run.
+
+## Knowledge Base Directory (`knowledge-base/`)
+
+Contains source documents, patterns, and structured data for the RAG system:
+
+```
+knowledge-base/
+├── docs/             # PDFs, TXT, DOCX (official docs, whitepapers)
+├── qa-pairs/         # JSONL Q&A data
+├── errors/           # Error code mapping (CSV/JSON)
+├── images/           # Architecture diagrams + captions
+├── code/             # Code examples and patterns
+│   └── patterns/     # Cloud architecture patterns
+├── structured/       # Pricing tables, comparison CSVs
+├── transcripts/      # Video/webinar transcripts
+└── security/         # Compliance and security guides
+```
 
 ## Logs Directory (`logs/`)
 
