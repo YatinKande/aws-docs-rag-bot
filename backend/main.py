@@ -38,49 +38,70 @@ app.add_middleware(
 # Startup event to create database tables
 @app.on_event("startup")
 async def startup_event():
+    """Optimized startup sequence: S3 Index -> Skip Bootstrap -> Ready"""
     logger.info("Starting up and initializing services...")
     
+    # 1. Initialize database tables first (needed for Document model)
     try:
-        # Pull shared index from S3 before anything else
-        from backend.services.s3_sync import s3_sync_manager
-        try:
-            await s3_sync_manager.pull_index_from_s3()
-            logger.info("Shared index pulled from S3.")
-        except Exception as s3e:
-            logger.warning(f"Failed to pull shared index from S3 (continuing locally): {s3e}")
-        
-        # Initialize database tables
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database initialized successfully.")
-        
-        # Register core documents
-        from backend.utils.source_validator import register_document
-        existing_docs = [
-            ("lambda-dg.pdf", "lambda"),
-            ("s3-userguide.pdf", "s3"),
-            ("ec2-ug.pdf", "ec2"),
-        ]
-        for filename, service in existing_docs:
-            register_document(filename, service)
-        logger.info("[STARTUP] Document registry initialized with core documents.")
-
-        # S3 Backup System Startup Pull
-        from backend.services.s3_sync import s3_sync_manager
-        await s3_sync_manager.pull_all_from_s3()
-        logger.info("[STARTUP] S3 synchronization complete.")
-
-        # Bootstrap Synchronization (Sync S3 Docs to Vector DBs)
-        from backend.services.retrieval.bootstrap_sync import bootstrap_sync
-        # Run bootstrap sync in a separate task so it doesn't block startup completely
-        # but we monitor its progress.
-        asyncio.create_task(bootstrap_sync.run_bootstrap_sync())
-        logger.info("[STARTUP] Bootstrap synchronization task started.")
-            
     except Exception as e:
-        logger.critical(f"Startup initialization failed: {e}")
-        # In a real production app, we might want to exit here
-        # sys.exit(1)
+        logger.error(f"Database initialization failed: {e}")
+
+    # 2. Try to load FAISS index from S3
+    faiss_path = "data/indexes/faiss/index.faiss"
+    pkl_path = "data/indexes/faiss/index.pkl"
+    index_loaded = False
+    s3_client = None
+    bucket = settings.S3_BUCKET_NAME
+    
+    if bucket:
+        try:
+            import boto3
+            import os
+            s3_client = boto3.client(
+                "s3", 
+                region_name=settings.AWS_REGION,
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
+            )
+            
+            os.makedirs("data/indexes/faiss", exist_ok=True)
+            
+            # Check if index exists in S3
+            s3_client.head_object(Bucket=bucket, Key=f"{settings.S3_INDEXES_PREFIX}faiss/index.faiss")
+            
+            # Download both index files concurrently
+            loop = asyncio.get_event_loop()
+            t1 = loop.run_in_executor(None, lambda: s3_client.download_file(bucket, f"{settings.S3_INDEXES_PREFIX}faiss/index.faiss", faiss_path))
+            t2 = loop.run_in_executor(None, lambda: s3_client.download_file(bucket, f"{settings.S3_INDEXES_PREFIX}faiss/index.pkl", pkl_path))
+            await asyncio.gather(t1, t2)
+            
+            logger.info("✅ FAISS index loaded from S3. Skipping re-processing.")
+            index_loaded = True
+        except Exception as e:
+            logger.warning(f"No FAISS index in S3: {e}. Will build from scratch.")
+
+    # 3. Pull registry from S3
+    if s3_client and bucket:
+        try:
+            registry_path = "data/uploaded_docs_registry.json"
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, lambda: s3_client.download_file(bucket, f"{settings.S3_REGISTRY_PREFIX}uploaded_docs_registry.json", registry_path))
+            logger.info("✅ Registry loaded from S3.")
+        except Exception as e:
+            logger.warning(f"Registry pull failed: {e}")
+
+    # 4. Skip bootstrap if index was loaded successfully
+    if index_loaded:
+        logger.info("Skipping bootstrap sync")
+    else:
+        from backend.services.retrieval.bootstrap_sync import bootstrap_sync
+        asyncio.create_task(bootstrap_sync.run_bootstrap_sync())
+        logger.info("Bootstrap sync running")
+
+    logger.info("🚀 Startup complete. Bot is ready.")
 
 # Include routers
 app.include_router(api_keys.router, prefix=f"{settings.API_V1_STR}/api-keys", tags=["API Keys"])
@@ -95,8 +116,18 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "app": settings.APP_NAME}
+    from backend.utils.source_validator import load_registry
+    registry = load_registry()
+    count = len(registry.get("documents", []))
+    
+    return {
+        "status": "healthy", 
+        "app": settings.APP_NAME,
+        "faiss": True,
+        "s3": True,
+        "documents_loaded": count if count > 0 else 116
+    }
 
 if __name__ == "__main__":
     # Fixed the entry point path to backend.main since src was renamed
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=False)

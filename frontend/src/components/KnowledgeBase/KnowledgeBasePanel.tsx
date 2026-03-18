@@ -186,7 +186,7 @@ export const KnowledgeBasePanel: React.FC = () => {
                                     id="file-upload"
                                     className="hidden"
                                     onChange={onFileChange}
-                                    accept=".txt,.pdf,.docx,.json,.csv,.jpg,.jpeg,.png"
+                                    accept=".txt,.pdf,.docx,.json,.csv,.jpg,.jpeg,.png,.pptx,.ppt,.zip"
                                 />
                                 {file ? (
                                     <div className="flex flex-col items-center text-center">
@@ -208,7 +208,7 @@ export const KnowledgeBasePanel: React.FC = () => {
                                             <Upload className="text-slate-400 w-10 h-10 group-hover:text-brand-500 transition-colors" />
                                         </div>
                                         <p className="text-slate-700 font-black mb-1">Drop your files here</p>
-                                        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">PDF, TXT, DOCX, JSON, CSV, JPG, PNG</p>
+                                        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">PDF, TXT, DOCX, PPTX, JSON, CSV, JPG, PNG, ZIP</p>
                                     </div>
                                 )}
                             </div>

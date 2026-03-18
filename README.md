@@ -216,8 +216,14 @@ aws-rag-bot/
 ├── frontend/             # React TypeScript frontend
 ├── data/                 # Data files and indexes (created on first run)
 ├── logs/                 # Application logs
-├── scripts/              # Utility scripts (start.sh, run_backend.py)
+├── scripts/              # Utility and maintenance scripts
+│   ├── maintenance/      # Database migrations, re-ingestion, backups
+│   ├── debug/            # Diagnostic tools and index inspectors
+│   ├── tools/            # Data processing and extraction utilities
+│   ├── run_backend.py    # Main server entry (development)
+│   └── start.sh          # Full stack launcher
 ├── tests/                # Unit and integration tests
+│   └── scripts/          # Retrieval and connection test scripts
 ├── docker/               # Docker configuration files
 ├── docs/                 # Documentation
 ├── requirements.txt      # Python dependencies
@@ -239,7 +245,15 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture docum
 
 ## Development
 
-### Running Tests
+#### S3-First Storage Strategy (Phase 2)
+
+The bot utilizes an **S3-First approach** to ensure data permanence and local system cleanliness:
+- **Cloud Source of Truth**: All documents, chunks, and vector indexes are automatically backed up to S3.
+- **Background Resync**: On every startup, a background task syncs the local environment with S3, ensuring even files added during downtime are processed.
+- **Local Minimalism**: Local source files are deleted immediately after vectorization to save disk space.
+- **Maintenance**: Use `scripts/maintenance/cleanup_data.py` to purge stale test data and keep the `data/` directory organized.
+
+## Running Tests
 
 ```bash
 pytest tests/unit/
@@ -250,6 +264,16 @@ pytest tests/unit/
 ```bash
 python scripts/run_backend.py
 ```
+
+### Maintenance and Testing
+
+Common maintenance tasks can be found in `scripts/maintenance/`:
+- **Sync existing documents**: `python scripts/maintenance/sync_existing.py`
+- **Re-ingest documents**: `python scripts/maintenance/reingest_docs.py`
+
+Test scripts have been moved to `tests/scripts/`:
+- **Verify connections**: `python tests/scripts/test_connections.py`
+- **Test retrieval**: `python tests/scripts/test_retrieval.py`
 
 ### Running Frontend Only
 

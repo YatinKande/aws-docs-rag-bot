@@ -56,19 +56,6 @@ async def post_ingestion_pipeline(filename: str, chunks: list, embeddings: list,
     # Step 1: Register in registry
     register_document(filename, service)
     
-    # Step 2: Tag all chunks with correct metadata
-    # (This assumes chunks is a list of Document objects from langchain)
-    for i, chunk in enumerate(chunks):
-        if hasattr(chunk, 'metadata'):
-            chunk.metadata.update({
-                "source":    filename,
-                "service":   service,
-                "doc_type":  "official_aws_doc",
-                "chunk_index": i,
-                "file_type": filename.rsplit('.', 1)[-1].lower(),
-                "display_name": get_display_name(service)
-            })
-    
     # Step 4: Update system prompt with new doc list
     await update_system_prompt_with_new_doc(filename, service)
 
@@ -113,10 +100,11 @@ async def post_ingestion_pipeline(filename: str, chunks: list, embeddings: list,
 async def upload_document(
     background_tasks: BackgroundTasks, 
     file: UploadFile = File(...), 
-    database: str = "faiss",
+    database: str = "faiss", # Forced to faiss below
     db: AsyncSession = Depends(get_db)
 ):
     """Uploads a document and starts background ingestion."""
+    database = "faiss" # Force FAISS regardless of input
     try:
         sanitized_name = sanitize_filename(file.filename)
         # Use a unique prefix to avoid collisions
@@ -208,7 +196,7 @@ async def retry_document_ingestion(
         if not doc.source_path or not os.path.exists(doc.source_path):
             raise HTTPException(status_code=400, detail="Source file no longer exists on server. Please re-upload.")
 
-        database = doc.metadata_info.get("target_database", "faiss")
+        database = "faiss" # Force FAISS regardless of metadata
         detected_service = doc.metadata_info.get("detected_service", "aws")
         
         doc.status = "pending"
@@ -283,7 +271,7 @@ async def delete_document(document_id: str, db: AsyncSession = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Document not found")
             
         filename = doc.filename
-        database = doc.metadata_info.get("target_database", "faiss")
+        database = "faiss" # Force FAISS for deletion
         
         logger.info(f"Deleting document: {filename} from {database}")
         

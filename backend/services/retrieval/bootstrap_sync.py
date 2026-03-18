@@ -79,6 +79,10 @@ class BootstrapSync:
                                 logger.warning(f"No chunks extracted from {filename}")
                     except Exception as e:
                         logger.error(f"Failed to bootstrap {filename}: {e}")
+                    finally:
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                            logger.info(f"🗑️ Cleaned up temp file: {filename}")
                 else:
                     logger.info(f"✅ {filename} is already up to date.")
 
@@ -117,27 +121,58 @@ class BootstrapSync:
             return []
 
     async def _needs_processing(self, filename: str, etag: str) -> bool:
-        """Determines if a document needs processing based on its ETag."""
+        """
+        Determines if a document needs processing based on:
+        1. ETag match (if metadata has it)
+        2. Filename check in FAISS index (direct check)
+        3. Registry status in SQL (must be 'completed')
+        
+        Only re-process if ALL 3 checks fail (meaning something is missing or changed).
+        """
         async with AsyncSessionLocal() as db:
-            result = await db.execute(select(Document).where(Document.filename == filename))
-            doc = result.scalar_one_or_none()
+            result = await db.execute(
+                select(Document)
+                .where(Document.filename == filename)
+                .order_by(Document.upload_date.desc())
+            )
+            doc = result.scalars().first()
             
-            if not doc:
-                return True # New document
+            # Check 1: Filename in FAISS index (Most authoritative)
+            is_indexed = self.retrieval_service.is_document_in_index(filename)
+            if is_indexed:
+                logger.info(f"Check: {filename} already present in FAISS index.")
             
-            if doc.status != "completed":
-                return True # Failed or partial earlier
-            
-            # Check ETag in metadata
-            meta = doc.metadata_info or {}
+            # Check 2: SQL Status
+            is_completed = doc is not None and doc.status == "completed"
+            if is_completed:
+                logger.info(f"Check: {filename} status is 'completed' in SQL.")
+
+            # Check 3: ETag match
+            meta = doc.metadata_info or {} if doc else {}
             stored_etag = meta.get("s3_etag")
+            etag_matches = stored_etag == etag
+            if etag_matches:
+                logger.info(f"Check: {filename} S3 ETag matches stored metadata.")
+
+            # Logic: If it's in the index AND completed in SQL AND ETag hasn't changed, skip.
+            # User wants: Only re-process if ALL 3 checks fail? 
+            # Actually, usually you skip if ANY check is valid (like if it's already there).
+            # But the prompt says: "Only re-process if ALL 3 checks fail."
+            # This means if ANY check passes (Index found OR completed OR ETag same), we SKIP.
             
-            return stored_etag != etag
+            if is_indexed or is_completed or etag_matches:
+                return False
+            
+            return True
 
     async def _get_or_create_document(self, db, filename, service, path, etag):
         """Gets or creates a Document record in the SQL DB."""
-        result = await db.execute(select(Document).where(Document.filename == filename))
-        doc = result.scalar_one_or_none()
+        result = await db.execute(
+            select(Document)
+            .where(Document.filename == filename)
+            .order_by(Document.upload_date.desc())
+        )
+        doc = result.scalars().first()
         
         if not doc:
             doc = Document(

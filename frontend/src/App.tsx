@@ -14,7 +14,7 @@ const App: React.FC = () => {
   const [selectedSource, setSelectedSource] = React.useState('auto');
   const [selectedDb, setSelectedDb] = React.useState('faiss');
 
-  const onSendMessage = async (content: string) => {
+  const onSendMessage = async (content: string, file?: File) => {
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -26,13 +26,16 @@ const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await api.chat(content, selectedSource, selectedDb);
+      const response = file
+        ? await api.chatWithFile(content, file)
+        : await api.chat(content, selectedSource, selectedDb);
+
       const assistantMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: response.answer,
         timestamp: new Date().toISOString(),
-        source_type: response.source_type,
+        source_type: response.source_type || (file ? 'docs' : 'none'),
         source_details: response.source_details || []
       };
       setMessages(prev => [...prev, assistantMsg]);

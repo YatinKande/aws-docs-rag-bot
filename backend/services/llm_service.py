@@ -10,6 +10,8 @@ from datetime import datetime
 
 from backend.core.config import settings
 from backend.utils.source_validator import validate_source, get_valid_sources
+from ragas.metrics import faithfulness
+from ragas import evaluate
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +62,78 @@ class LLMService:
                 except:
                     continue
             
+            
             raise e
+
+    def select_model(self, question: str) -> str:
+        """
+        Use DeepSeek for complex multi-step questions
+        Use llama3.2 for simple factual questions
+        """
+        complex_keywords = [
+            "why", "how does", "explain", "compare",
+            "difference between", "architecture",
+            "design", "troubleshoot", "debug",
+            "best practice", "when should i",
+            "pros and cons", "tradeoff"
+        ]
+        
+        q_lower = question.lower()
+        is_complex = any(
+            kw in q_lower 
+            for kw in complex_keywords
+        )
+        
+        reasoning_model = getattr(settings, "OLLAMA_REASONING_MODEL", None)
+        if is_complex and reasoning_model:
+            logger.info(f"Using DeepSeek for complex question")
+            return f"ollama/{reasoning_model}"
+        
+        return self.text_model
+
+    async def score_answer(
+        self,
+        question: str,
+        answer: str,
+        contexts: list
+    ) -> dict:
+        """
+        Score answer quality using RAGAS.
+        Returns faithfulness score 0.0 to 1.0
+        1.0 = perfectly grounded in documents
+        0.0 = hallucinated
+        """
+        try:
+            from datasets import Dataset
+            
+            data = {
+                "question": [question],
+                "answer": [answer],
+                "contexts": [contexts]
+            }
+            dataset = Dataset.from_dict(data)
+            
+            result = evaluate(
+                dataset,
+                metrics=[faithfulness]
+            )
+            
+            score = result["faithfulness"]
+            
+            if score < 0.5:
+                logger.warning(
+                    f"Low faithfulness score: {score:.2f} "
+                    f"for question: {question[:50]}"
+                )
+            
+            return {
+                "faithfulness": round(score, 2),
+                "is_reliable": score >= 0.7
+            }
+        except Exception as e:
+            logger.warning(f"RAGAS scoring failed: {e}")
+            return {"faithfulness": None, 
+                    "is_reliable": None}
 
     async def describe_image(self, image_path: str) -> str:
         """Describes an image using Ollama Vision via LiteLLM."""
@@ -85,6 +158,126 @@ class LLMService:
         except Exception as e:
             logger.error(f"Image description failed: {e}")
             return f"Error describing image: {str(e)}"
+
+    async def analyze_image(
+        self,
+        message: str,
+        image_base64: str,
+        ocr_context: str = ""
+    ) -> str:
+
+        # Generic system prompt for ANY image type
+        system_prompt = """You are an expert visual 
+analyst. When analyzing any image:
+
+STEP 1 — IDENTIFY what type of image this is:
+- Architecture/flow diagram
+- Chart or graph (bar, pie, line, scatter)
+- Screenshot (UI, code, terminal, error)
+- Photo or illustration
+- Document, table, or form
+- Infographic or poster
+- Handwritten notes
+- Map or geographic diagram
+- Any other visual content
+
+STEP 2 — LIST everything you can see:
+- All text visible in the image
+- All icons, symbols, shapes
+- All arrows and their directions
+- All colors and what they represent
+- All labels and titles
+- Numbers, percentages, dates if present
+
+STEP 3 — EXPLAIN the content accurately:
+- For diagrams: follow arrows to explain flow
+  left=input/source, right=output/destination,
+  center=processing, top=management, 
+  bottom=storage. Same component on both sides
+  means it is both input and output.
+- For charts: explain what the data shows,
+  trends, highest/lowest values, key takeaways
+- For screenshots: describe what the UI shows,
+  what error or code is displayed
+- For photos: describe what is in the image
+- For documents/tables: extract and explain
+  the key information and data
+- For infographics: summarize the key points
+  in order from top to bottom
+
+STEP 4 — ANSWER the user question directly:
+- Be specific, reference actual elements 
+  visible in the image
+- Do not guess or assume anything not visible
+- If something is unclear say so honestly
+- Keep explanation clear for any skill level
+
+RULES:
+- Never hallucinate components not in the image
+- Always follow arrow directions for flow diagrams
+- Extract ALL visible text before explaining
+- If image is blurry or unclear say so
+- Answer in the same language the user asks"""
+
+        # Build final prompt
+        user_prompt = message
+        if ocr_context:
+            user_prompt = (
+                f"{message}\n\n"
+                f"Additional text extracted from "
+                f"image via OCR:\n{ocr_context}"
+            )
+
+        try:
+            import httpx
+
+            payload = {
+                "model": "llava",
+                "system": system_prompt,
+                "prompt": user_prompt,
+                "images": [image_base64],
+                "stream": False,
+                "options": {
+                    "temperature": 0.1,
+                    "num_predict": 1024
+                }
+            }
+
+            async with httpx.AsyncClient(
+                timeout=120
+            ) as client:
+                r = await client.post(
+                    f"{settings.OLLAMA_BASE_URL.replace('/v1', '')}"
+                    f"/api/generate",
+                    json=payload
+                )
+
+                if r.status_code == 200:
+                    result = r.json()
+                    return result.get(
+                        "response",
+                        "Could not analyze image."
+                    )
+                else:
+                    logger.error(
+                        f"llava failed: {r.status_code}"
+                    )
+                    if ocr_context:
+                        return await self.generate_response(
+                            query=(
+                                f"{message}\n\n"
+                                f"Context from image:\n"
+                                f"{ocr_context}"
+                            ),
+                            context="",
+                            sources=["OCR Extraction"],
+                            service="general"
+                        )
+                    return "Image analysis failed."
+
+        except Exception as e:
+            logger.error(f"analyze_image failed: {e}")
+            return f"Error analyzing image: {str(e)}"
 
     async def classify_intent(self, query: str) -> Dict[str, Any]:
         """Classifies question intent and identifies target document/topic."""
@@ -164,7 +357,8 @@ Return ONLY a single integer (1, 2, 3, 4, 5)."""
             {"role": "user", "content": f"Query: {query}\n\nInsights: {learned_insights}"}
         ]
         
-        answer = await self._call_llm(messages)
+        selected_model = self.select_model(original_query)
+        answer = await self._call_llm(messages, model=selected_model)
         
         # Validate and correct the source citation
         valid_sources = get_valid_sources()

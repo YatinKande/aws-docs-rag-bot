@@ -16,12 +16,13 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/database/sql_app.db"
     
     # Vector Store
-    VECTOR_DB_TYPE: str = "faiss" # faiss, chroma, pinecone, etc.
-    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    VECTOR_DB_TYPE: str = "faiss"  # Never change this - FAISS is now the only allowed store
+    EMBEDDING_MODEL: str = "BAAI/bge-m3"
     
     # Ollama Models
     OLLAMA_TEXT_MODEL: str = "llama3.2"
     OLLAMA_VISION_MODEL: str = "llava"
+    OLLAMA_REASONING_MODEL: Optional[str] = None
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     
     # RAG Upgrade Settings

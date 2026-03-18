@@ -22,7 +22,8 @@ class AdvancedRetrieval:
         """Performs multi-stage retrieval: Hybrid Search -> Reranking."""
         try:
             # Stage 1 & 2: Hybrid Search (BM25 + Dense)
-            candidates = await self.hybrid_search.search(query, top_k=20, database=database, filter=filter)
+            # Force FAISS
+            candidates = await self.hybrid_search.search(query, top_k=20, database="faiss", filter=filter)
             
             if not candidates:
                 logger.info(f"No candidates found for query: {query}")
@@ -38,14 +39,14 @@ class AdvancedRetrieval:
     async def add_documents(self, documents: List[Dict[str, Any]], database: str = "faiss"):
         """Proxies document addition to hybrid search."""
         try:
-            await self.hybrid_search.add_documents(documents, database=database)
+            await self.hybrid_search.add_documents(documents, database="faiss")
         except Exception as e:
             logger.error(f"AdvancedRetrieval add_documents failed: {e}")
 
     async def delete_documents(self, filter_dict: Dict[str, Any], database: str = "faiss"):
         """Proxies document deletion to hybrid search."""
         try:
-            await self.hybrid_search.delete_documents(filter_dict, database=database)
+            await self.hybrid_search.delete_documents(filter_dict, database="faiss")
         except Exception as e:
             logger.error(f"AdvancedRetrieval delete_documents failed: {e}")
 
@@ -55,3 +56,7 @@ class AdvancedRetrieval:
             await self.hybrid_search.add_to_all_stores(documents)
         except Exception as e:
             logger.error(f"AdvancedRetrieval add_to_all_stores failed: {e}")
+
+    def is_document_in_index(self, filename: str) -> bool:
+        """Checks if a document is already in the hybrid index."""
+        return self.hybrid_search.is_document_in_index(filename)

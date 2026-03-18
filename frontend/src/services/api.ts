@@ -14,6 +14,18 @@ export const api = {
         return response.json();
     },
 
+    async chatWithFile(message: string, file: File): Promise<any> {
+        const formData = new FormData();
+        formData.append("message", message);
+        formData.append("file", file);
+
+        const response = await fetch(`${API_BASE_URL}/chat/with-file`, {
+            method: 'POST',
+            body: formData,
+        });
+        return response.json();
+    },
+
     async getApiKeys(): Promise<any[]> {
         const response = await fetch(`${API_BASE_URL}/api-keys/`);
         return response.json();

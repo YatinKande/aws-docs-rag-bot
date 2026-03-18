@@ -1,21 +1,50 @@
 import React from 'react';
-import { Send, User, Bot, FileText, Cloud, Layers } from 'lucide-react';
+import { Send, User, Bot, FileText, Cloud, Layers, Paperclip, X, FileIcon } from 'lucide-react';
 import type { ChatMessage } from '../../types';
 
 interface ChatPanelProps {
     messages: ChatMessage[];
-    onSendMessage: (content: string) => void;
+    onSendMessage: (content: string, file?: File) => void;
     isLoading: boolean;
 }
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onSendMessage, isLoading }) => {
     const [input, setInput] = React.useState('');
+    const [attachedFile, setAttachedFile] = React.useState<File | null>(null);
+    const [filePreview, setFilePreview] = React.useState<string | null>(null);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setAttachedFile(file);
+            // Show preview for images
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    setFilePreview(ev.target?.result as string);
+                };
+                reader.readAsDataURL(file);
+            } else {
+                setFilePreview(null);
+            }
+        }
+    };
+
+    const clearAttachment = () => {
+        setAttachedFile(null);
+        setFilePreview(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (input.trim() && !isLoading) {
-            onSendMessage(input);
+        if ((input.trim() || attachedFile) && !isLoading) {
+            onSendMessage(input, attachedFile || undefined);
             setInput('');
+            clearAttachment();
         }
     };
 
@@ -89,21 +118,61 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onSendMessage, i
             </div>
 
             <form onSubmit={handleSubmit} className="p-4 bg-slate-50 border-t border-slate-200">
-                <div className="relative flex items-center">
+                {attachedFile && (
+                    <div className="mb-4 p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between shadow-sm animate-in slide-in-from-bottom-2">
+                        <div className="flex items-center space-x-3">
+                            {filePreview ? (
+                                <img src={filePreview} alt="upload preview" className="w-10 h-10 object-cover rounded-lg border border-slate-100" />
+                            ) : (
+                                <div className="w-10 h-10 bg-slate-50 rounded-lg flex items-center justify-center border border-slate-100">
+                                    <FileIcon className="w-5 h-5 text-slate-400" />
+                                </div>
+                            )}
+                            <div className="flex flex-col">
+                                <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]">{attachedFile.name}</span>
+                                <span className="text-[10px] text-slate-400 uppercase font-medium">{(attachedFile.size / 1024).toFixed(1)} KB</span>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={clearAttachment}
+                            className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
+                <div className="relative flex items-center space-x-2">
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        className="hidden"
+                        accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.docx,.pptx,.txt,.md,.json,.csv"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isLoading}
+                        className="p-2.5 bg-white border border-slate-200 text-slate-500 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all disabled:opacity-50 shadow-sm"
+                        title="Attach technical document or image"
+                    >
+                        <Paperclip className="w-5 h-5" />
+                    </button>
                     <input
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         disabled={isLoading}
-                        placeholder="Type your question..."
-                        className="w-full bg-white border border-slate-200 rounded-2xl pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all disabled:opacity-50 shadow-sm"
+                        placeholder={attachedFile ? "Ask a question about this file..." : "Type your question..."}
+                        className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all disabled:opacity-50 shadow-sm"
                     />
                     <button
                         type="submit"
-                        disabled={!input.trim() || isLoading}
-                        className="absolute right-2 p-2 bg-brand-600 text-white rounded-xl hover:bg-brand-700 transition-colors disabled:bg-slate-300"
+                        disabled={(!input.trim() && !attachedFile) || isLoading}
+                        className="p-2.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 transition-colors disabled:bg-slate-300 shadow-md shadow-brand-500/20"
                     >
-                        <Send className="w-4 h-4" />
+                        <Send className="w-5 h-5" />
                     </button>
                 </div>
             </form>

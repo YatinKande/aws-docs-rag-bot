@@ -7,6 +7,7 @@ Retrieval Service
 from loguru import logger
 import asyncio
 import time
+import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 
@@ -15,6 +16,13 @@ from backend.services.document_processor import DocumentProcessor
 from backend.models.models import Document
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.config import settings
+from backend.utils.service_detection import (
+    get_service_from_filename, 
+    get_display_name, 
+    get_service_filter
+)
+from backend.services.s3_sync import s3_sync_manager
+from backend.utils.source_validator import register_document, remove_document
 
 class RetrievalService:
     # A simple in-memory cache for processed document chunks to prevent re-running 
@@ -37,6 +45,13 @@ class RetrievalService:
                     await db.commit()
         except Exception as e:
             logger.error(f"Failed to update status for {document_id}: {e}")
+
+    async def add_to_all_stores(self, documents: List[Dict[str, Any]]):
+        """Proxies batch ingestion to all stores."""
+        try:
+            await self.engine.add_to_all_stores(documents)
+        except Exception as e:
+            logger.error(f"RetrievalService add_to_all_stores failed: {e}")
 
     async def ingest_document(
         self, 
@@ -67,9 +82,8 @@ class RetrievalService:
                 # Check if file exists locally, otherwise pull from S3
                 if not os.path.exists(file_path):
                     logger.info(f"File {filename} missing locally. Attempting to pull from S3...")
-                    from backend.utils.service_detection import get_service_from_filename
+                    logger.info(f"File {filename} missing locally. Attempting to pull from S3...")
                     service = get_service_from_filename(filename)
-                    from backend.services.s3_sync import s3_sync_manager
                     try:
                         await s3_sync_manager.download_document(filename, service, file_path)
                     except Exception as s3e:
@@ -79,13 +93,42 @@ class RetrievalService:
                         return 0, []
 
                 start_proc = time.time()
+                logger.info(f"RetrievalService: Calling DocumentProcessor for {filename}...")
                 chunks = await self.doc_processor.process_file(file_path, filename)
-                logger.info(f"Analysis for {filename} took {time.time() - start_proc:.2f}s")
+                logger.info(f"RetrievalService: {len(chunks)} chunks returned for {filename} in {time.time() - start_proc:.2f}s")
                 # Cache results for other databases
                 if chunks:
                     self._ingestion_cache[cache_key] = chunks
             
             if chunks:
+                service = get_service_from_filename(filename)
+                display_name = get_display_name(service)
+                
+                # Standardize metadata BEFORE vectorization
+                for i, chunk in enumerate(chunks):
+                    # Ensure it is a dict for consistency
+                    if hasattr(chunk, 'metadata'):
+                        chunk.metadata.update({
+                            "source":       filename,
+                            "service":      service,
+                            "source_topic": service, # Standard key used for filtering
+                            "doc_type":     "official_aws_doc",
+                            "chunk_index":  i,
+                            "display_name": display_name
+                        })
+                    elif isinstance(chunk, dict):
+                        meta = chunk.get("metadata", {})
+                        meta.update({
+                            "source":       filename,
+                            "service":      service,
+                            "source_topic": service,
+                            "doc_type":     "official_aws_doc",
+                            "chunk_index":  i,
+                            "display_name": display_name
+                        })
+                        chunk["metadata"] = meta
+                
+                logger.info(f"RetrievalService: Starting vectorization of {len(chunks)} chunks into {database}...")
                 await self._update_status(db, document_id, f"vectorizing into {database}...")
                 
                 # Set a critical timeout of 1800 seconds for vectorization (increased for large docs)
@@ -95,9 +138,6 @@ class RetrievalService:
                     logger.info(f"Vectorization for {filename} into {database} took {time.time() - start_vec:.2f}s")
 
                     # Register doc in the master registry
-                    from backend.utils.source_validator import register_document
-                    from backend.utils.service_detection import get_service_from_filename
-                    service = get_service_from_filename(filename)
                     register_document(filename, service)
                     
                     if document_id and db:
@@ -115,7 +155,6 @@ class RetrievalService:
                             logger.info(f"Successfully processed {filename}: {len(chunks)} chunks")
                             
                             # Sync updated index to S3 (non-blocking)
-                            from backend.services.s3_sync import s3_sync_manager
                             await s3_sync_manager.sync_index_to_s3()
                 except asyncio.TimeoutError:
                     logger.error(f"TIMEOUT: Vectorization for {filename} took too long (>1800s)")
@@ -137,6 +176,10 @@ class RetrievalService:
                 
         return len(chunks) if chunks else 0, chunks
 
+    def is_document_in_index(self, filename: str) -> bool:
+        """Checks if a document is already indexed in FAISS."""
+        return self.engine.is_document_in_index(filename)
+
     async def semantic_search(self, query: str, top_k: int = 5, database: str = "faiss") -> List[Dict[str, Any]]:
         """Performs advanced retrieval with intent classification and metadata filtering."""
         try:
@@ -147,12 +190,12 @@ class RetrievalService:
             # 2. Build Metadata Filter
             filter_dict = {}
             if topic:
+                topic = topic.lower() # Case-insensitive normalization
                 filter_dict["source_topic"] = topic
                 logger.debug(f"Applying Intent Topic Filter: {topic}")
             
             # Fallback to keyword-based filtering if no topic from LLM
             if not filter_dict:
-                from backend.utils.service_detection import get_service_filter
                 filter_dict = get_service_filter(query)
                 if filter_dict:
                     logger.debug(f"Applying Keyword Service Filter: {filter_dict}")
@@ -182,12 +225,10 @@ class RetrievalService:
         try:
             await self.engine.delete_documents({"source": filename}, database=database)
             
-            from backend.utils.source_validator import remove_document
             remove_document(filename)
             logger.info(f"Cleaned up indices for {filename}")
 
             # Sync updated index to S3 (non-blocking)
-            from backend.services.s3_sync import s3_sync_manager
             await s3_sync_manager.sync_index_to_s3()
         except Exception as e:
             logger.error(f"Failed to delete document {filename}: {e}")

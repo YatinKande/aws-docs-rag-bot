@@ -110,6 +110,15 @@ def register_document(filename: str, service: str):
         save_registry(registry)
         logger.info(f"[REGISTRY] Registered: {filename} → {service}")
 
+def remove_document(filename: str):
+    registry = load_registry()
+    docs = registry.get("documents", [])
+    updated = [d for d in docs if d.get("filename") != filename]
+    if len(docs) != len(updated):
+        registry["documents"] = updated
+        save_registry(registry)
+        logger.info(f"[REGISTRY] Removed: {filename}")
+
 def get_valid_sources() -> list:
     registry = load_registry()
     registered = [

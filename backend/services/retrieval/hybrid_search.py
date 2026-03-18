@@ -5,6 +5,7 @@ Hybrid Search Service
 - Replaces prints with logging
 - Ensures async safety and consistency
 """
+import asyncio
 from typing import List, Dict, Any, Optional
 from loguru import logger
 
@@ -18,6 +19,7 @@ from backend.services.vector_store.qdrant_store import QdrantStore
 class HybridSearch:
     def __init__(self):
         self.bm25_index = BM25Index()
+        self.lock = asyncio.Lock()
         # Lazily initialize stores
         self.stores = {
             "faiss": FAISSStore(),
@@ -51,15 +53,19 @@ class HybridSearch:
         return self.stores[name]
 
     async def add_documents(self, documents: List[Dict[str, Any]], database: str = "faiss"):
-        """Adds documents to both BM25 and vector stores."""
-        try:
-            self.bm25_index.add_documents(documents)
-            store = self._get_store(database)
-            if store:
-                await store.add_documents(documents)
-            logger.info(f"Indexed {len(documents)} chunks into BM25 and {database}")
-        except Exception as e:
-            logger.error(f"Hybrid indexing failed: {e}")
+        """Adds documents to both BM25 and vector stores with concurrency protection."""
+        async with self.lock:
+            try:
+                # Add to BM25 (Synchronous, but protected by lock)
+                self.bm25_index.add_documents(documents)
+                
+                # Get and update the store
+                store = self._get_store(database)
+                if store:
+                    await store.add_documents(documents)
+                logger.info(f"Indexed {len(documents)} chunks into BM25 and {database}")
+            except Exception as e:
+                logger.error(f"Hybrid indexing failed: {e}")
 
     async def add_to_all_stores(self, documents: List[Dict[str, Any]]):
         """Adds documents to all available and initialized vector stores."""
@@ -68,22 +74,11 @@ class HybridSearch:
             self.bm25_index.add_documents(documents)
             logger.info("Indexed chunks into BM25.")
 
-            # 2. Add to all available vector stores
-            tasks = []
-            available_db_names = ["faiss", "chroma", "lancedb", "milvus", "qdrant"]
-            
-            for db_name in available_db_names:
-                # We try to initialize/get the store
-                store = self._get_store(db_name)
-                if store:
-                    # Note: _get_store might return FAISS as fallback, 
-                    # we should be careful about double-adding to FAISS.
-                    # But if we use explicit names, it's safer.
-                    tasks.append(store.add_documents(documents))
-            
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
-                logger.info(f"Successfully sent {len(documents)} chunks to all enabled vector stores.")
+            # 2. Add to FAISS only
+            store = self._get_store("faiss")
+            if store:
+                await store.add_documents(documents)
+                logger.info(f"Successfully sent {len(documents)} chunks to FAISS store.")
         except Exception as e:
             logger.error(f"Failed to add documents to all stores: {e}")
 
@@ -145,9 +140,16 @@ class HybridSearch:
         """Deletes documents from both BM25 and the specified vector store."""
         try:
             await self.bm25_index.delete_documents(filter_dict)
-            store = self._get_store(database)
+            store = self._get_store("faiss")
             if store:
                 await store.delete_documents(filter_dict)
             logger.info(f"Deleted documents matching {filter_dict} from hybrid indices.")
         except Exception as e:
             logger.error(f"Hybrid deletion failed: {e}")
+
+    def is_document_in_index(self, filename: str) -> bool:
+        """Checks if a document is present in the FAISS index."""
+        store = self._get_store("faiss")
+        if hasattr(store, 'is_document_in_index'):
+            return store.is_document_in_index(filename)
+        return False

@@ -10,8 +10,8 @@
                 "s3:ListBucket"
             ],
             "Resource": [
-                "arn:aws:s3:::chatbot-yatin",
-                "arn:aws:s3:::chatbot-yatin/*"
+                "arn:aws:s3:::cloud-intelligence-rag-store",
+                "arn:aws:s3:::cloud-intelligence-rag-store/*"
             ]
         }
     ]

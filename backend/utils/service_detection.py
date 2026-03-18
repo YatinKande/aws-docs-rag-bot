@@ -10,7 +10,8 @@ AWS_SERVICES = [
     "sns", "sqs", "api gateway", "cognito",
     "route53", "cloudfront", "elasticache",
     "redshift", "glue", "athena", "kinesis",
-    "step functions", "eventbridge", "secrets manager"
+    "step functions", "eventbridge", "secrets manager",
+    "sovereign-cloud", "openai"
 ]
 
 def fuzzy_match_service(query: str) -> str:
@@ -161,6 +162,7 @@ FILENAME_TO_SERVICE = {
     # ML & AI
     "sagemaker":        "sagemaker",
     "bedrock":          "bedrock",
+    "openai":           "bedrock",
     "rekognition":      "rekognition",
     "textract":         "textract",
     "comprehend":       "comprehend",
@@ -213,6 +215,8 @@ FILENAME_TO_SERVICE = {
     "overview":         "general",
     "whitepaper":       "general",
     "faq":              "general",
+    "european-sovereign-cloud": "sovereign-cloud",
+    "sovereign-cloud": "sovereign-cloud",
 }
 
 def get_service_from_filename(filename: str) -> str:
@@ -286,6 +290,7 @@ def get_display_name(service: str) -> str:
         "apigateway":       "Amazon API Gateway",
         "elasticache":      "Amazon ElastiCache",
         "systemsmanager":   "AWS Systems Manager",
+        "sovereign-cloud":  "AWS European Sovereign Cloud",
         "general":          "AWS General Documentation",
     }
     return DISPLAY_NAMES.get(service, f"AWS {service.upper()}")
@@ -310,3 +315,12 @@ def detect_service(query: str) -> str:
             logger.info(f"Fuzzy matched '{query}' -> '{service}'")
     
     return service or "general"
+
+def get_service_filter(query: str) -> dict:
+    """
+    Returns a FAISS-compatible metadata filter based on service detection.
+    """
+    service = detect_service(query)
+    if service and service != "general":
+        return {"source_topic": service.lower()}
+    return {}

@@ -36,7 +36,7 @@ class FAISSStore(VectorStoreBase):
             logger.error(f"Failed to load FAISS index: {e}")
 
     async def add_documents(self, documents: List[Dict[str, Any]]):
-        """Adds documents to FAISS asynchronously."""
+        """Adds documents to FAISS asynchronously and backs up to S3."""
         try:
             texts = [doc["content"] for doc in documents]
             metadatas = [doc["metadata"] for doc in documents]
@@ -50,6 +50,10 @@ class FAISSStore(VectorStoreBase):
 
             await asyncio.get_event_loop().run_in_executor(None, _sync_add)
             logger.info(f"Added {len(documents)} chunks to FAISS.")
+            
+            # Immediate backup to S3
+            await self.save_index_to_s3()
+            
         except Exception as e:
             logger.error(f"Failed to add documents to FAISS: {e}")
 
@@ -61,9 +65,8 @@ class FAISSStore(VectorStoreBase):
         try:
             # Define synchronous search to run in executor
             def _sync_search():
-                # Handle multi-value filters manually if needed, otherwise use metadata filter
-                # Note: LangChain FAISS metadata filtering is simple.
-                return self.vector_store.similarity_search_with_score(query, k=top_k, filter=filter)
+                # Increase fetch_k to ensure enough candidates pass the metadata filter
+                return self.vector_store.similarity_search_with_score(query, k=top_k, filter=filter, fetch_k=500)
 
             docs_with_scores = await asyncio.get_event_loop().run_in_executor(None, _sync_search)
             
@@ -80,7 +83,7 @@ class FAISSStore(VectorStoreBase):
             return []
 
     async def delete_documents(self, filter_dict: Dict[str, Any]):
-        """Delete documents from FAISS asynchronously."""
+        """Delete documents from FAISS asynchronously and update S3 backup."""
         if not self.vector_store:
             return
 
@@ -105,5 +108,52 @@ class FAISSStore(VectorStoreBase):
             deleted_count = await asyncio.get_event_loop().run_in_executor(None, _sync_delete)
             if deleted_count > 0:
                 logger.info(f"Deleted {deleted_count} chunks from FAISS matching {filter_dict}")
+                # Immediate backup to S3 after deletion
+                await self.save_index_to_s3()
         except Exception as e:
             logger.error(f"Failed to delete documents from FAISS: {e}")
+
+    async def save_index_to_s3(self):
+        """Backs up the local FAISS index to S3."""
+        try:
+            import boto3
+            from backend.core.config import settings
+            
+            s3 = boto3.client(
+                "s3",
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                region_name=settings.AWS_REGION or "us-east-1"
+            )
+            bucket = settings.S3_BUCKET_NAME
+            
+            faiss_file = os.path.join(self.index_path, "index.faiss")
+            pkl_file = os.path.join(self.index_path, "index.pkl")
+            
+            if os.path.exists(faiss_file) and os.path.exists(pkl_file):
+                # Run uploads in executor to avoid blocking
+                loop = asyncio.get_event_loop()
+                key_faiss = f"{settings.S3_INDEXES_PREFIX}faiss/index.faiss"
+                key_pkl = f"{settings.S3_INDEXES_PREFIX}faiss/index.pkl"
+                
+                await loop.run_in_executor(None, lambda: s3.upload_file(faiss_file, bucket, key_faiss))
+                await loop.run_in_executor(None, lambda: s3.upload_file(pkl_file, bucket, key_pkl))
+                logger.info("✅ FAISS index saved to S3.")
+            else:
+                logger.warning("Local FAISS index files missing, skipping S3 backup.")
+        except Exception as e:
+            logger.warning(f"FAISS S3 save failed: {e}")
+
+    def is_document_in_index(self, filename: str) -> bool:
+        """Synchronously checks if a document is present in the FAISS index."""
+        if not self.vector_store or not hasattr(self.vector_store, 'docstore'):
+            return False
+        
+        try:
+            for doc in self.vector_store.docstore._dict.values():
+                if doc.metadata.get("source") == filename:
+                    return True
+        except Exception as e:
+            logger.error(f"Error checking filename in FAISS: {e}")
+            
+        return False

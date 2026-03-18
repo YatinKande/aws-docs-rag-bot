@@ -16,9 +16,12 @@ class Reranker:
         self.model_name = model_name
         self.cross_encoder = None
         self.flash_ranker = None
-        
-        # Lazy load models to avoid heavy init on every import
-        self._init_models()
+        self._models_loaded = False
+
+    def _ensure_models_loaded(self):
+        if not self._models_loaded:
+            self._init_models()
+            self._models_loaded = True
 
     def _init_models(self):
         """Initializes reranking models with proper error handling."""
@@ -44,6 +47,9 @@ class Reranker:
             return []
             
         try:
+            # Ensure models are loaded when first handling a request
+            self._ensure_models_loaded()
+            
             # 1. FlashRank Phase (Fast pruning) - Run in executor
             if self.flash_ranker:
                 candidates = await self._run_flashrank(query, candidates)
